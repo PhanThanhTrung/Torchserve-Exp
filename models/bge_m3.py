@@ -1,7 +1,7 @@
 import logging
 import os
 from collections import defaultdict
-from typing import Dict, List, Tuple, Union, Optional
+from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -42,20 +42,22 @@ class BGEM3Model(nn.Module):
                                            ignore_patterns=['flax_model.msgpack', 'rust_model.ot', 'tf_model.h5'])
 
         self.model: AutoModel = AutoModel.from_pretrained(model_name)
-        self.tokenizer: AutoTokenizer = AutoTokenizer.from_pretrained(model_name)
+        self.tokenizer: AutoTokenizer = AutoTokenizer.from_pretrained(
+            model_name)
 
         self.colbert_linear: nn.Linear = torch.nn.Linear(in_features=self.model.config.hidden_size,
-                                              out_features=self.model.config.hidden_size if colbert_dim == -1 else colbert_dim)
-        self.sparse_linear: nn.Linear = torch.nn.Linear(in_features=self.model.config.hidden_size, out_features=1)
+                                                         out_features=self.model.config.hidden_size if colbert_dim == -1 else colbert_dim)
+        self.sparse_linear: nn.Linear = torch.nn.Linear(
+            in_features=self.model.config.hidden_size, out_features=1)
 
         if os.path.exists(os.path.join(model_name, 'colbert_linear.pt')) and os.path.exists(
                 os.path.join(model_name, 'sparse_linear.pt')):
-            logger.info('Loading existing colbert_linear and sparse_linear---------')
+            logger.info(
+                'Loading existing colbert_linear and sparse_linear---------')
             self.load_pooler(model_dir=model_name)
         else:
             logger.info(
                 'The parameters of colbert_linear and sparse linear is new initialize. Make sure the model is loaded for training, not inferencing')
-
 
     def dense_embedding(self, hidden_state, mask):
         if self.sentence_pooling_method == 'cls':
@@ -67,12 +69,14 @@ class BGEM3Model(nn.Module):
 
     def sparse_embedding(self, hidden_state, input_ids, return_embedding: bool = True):
         token_weights = torch.relu(self.sparse_linear(hidden_state))
-        if not return_embedding: return token_weights
+        if not return_embedding:
+            return token_weights
 
         sparse_embedding = torch.zeros(input_ids.size(0), input_ids.size(1), self.vocab_size,
                                        dtype=token_weights.dtype,
                                        device=token_weights.device)
-        sparse_embedding = torch.scatter(sparse_embedding, dim=-1, index=input_ids.unsqueeze(-1), src=token_weights)
+        sparse_embedding = torch.scatter(
+            sparse_embedding, dim=-1, index=input_ids.unsqueeze(-1), src=token_weights)
 
         unused_tokens = [self.tokenizer.cls_token_id, self.tokenizer.eos_token_id, self.tokenizer.pad_token_id,
                          self.tokenizer.unk_token_id]
@@ -87,15 +91,20 @@ class BGEM3Model(nn.Module):
 
     def _encode(self, features):
         dense_vecs, sparse_vecs, colbert_vecs = None, None, None
-        last_hidden_state = self.model(**features, return_dict=True).last_hidden_state
-        dense_vecs = self.dense_embedding(last_hidden_state, features['attention_mask'])
+        last_hidden_state = self.model(
+            **features, return_dict=True).last_hidden_state
+        dense_vecs = self.dense_embedding(
+            last_hidden_state, features['attention_mask'])
         if self.unified_finetuning:
-            sparse_vecs = self.sparse_embedding(last_hidden_state, features['input_ids'])
-            colbert_vecs = self.colbert_embedding(last_hidden_state, features['attention_mask'])
+            sparse_vecs = self.sparse_embedding(
+                last_hidden_state, features['input_ids'])
+            colbert_vecs = self.colbert_embedding(
+                last_hidden_state, features['attention_mask'])
         if self.normlized:
             dense_vecs = torch.nn.functional.normalize(dense_vecs, dim=-1)
             if self.unified_finetuning:
-                colbert_vecs = torch.nn.functional.normalize(colbert_vecs, dim=-1)
+                colbert_vecs = torch.nn.functional.normalize(
+                    colbert_vecs, dim=-1)
         return dense_vecs, sparse_vecs, colbert_vecs
 
     def encode(self, features, sub_batch_size=None):
@@ -105,12 +114,14 @@ class BGEM3Model(nn.Module):
         if sub_batch_size is not None and sub_batch_size != -1:
             all_dense_vecs, all_sparse_vecs, all_colbert_vecs = [], [], []
             for i in range(0, len(features['attention_mask']), sub_batch_size):
-                end_inx = min(i + sub_batch_size, len(features['attention_mask']))
+                end_inx = min(i + sub_batch_size,
+                              len(features['attention_mask']))
                 sub_features = {}
                 for k, v in features.items():
                     sub_features[k] = v[i:end_inx]
 
-                dense_vecs, sparse_vecs, colbert_vecs = self._encode(sub_features)
+                dense_vecs, sparse_vecs, colbert_vecs = self._encode(
+                    sub_features)
                 all_dense_vecs.append(dense_vecs)
                 all_sparse_vecs.append(sparse_vecs)
                 all_colbert_vecs.append(colbert_vecs)
@@ -134,8 +145,10 @@ class BGEM3Model(nn.Module):
         return torch.matmul(q_reps, p_reps.transpose(-2, -1))
 
     def load_pooler(self, model_dir):
-        colbert_state_dict = torch.load(os.path.join(model_dir, 'colbert_linear.pt'), map_location='cpu')
-        sparse_state_dict = torch.load(os.path.join(model_dir, 'sparse_linear.pt'), map_location='cpu')
+        colbert_state_dict = torch.load(os.path.join(
+            model_dir, 'colbert_linear.pt'), map_location='cpu')
+        sparse_state_dict = torch.load(os.path.join(
+            model_dir, 'sparse_linear.pt'), map_location='cpu')
         self.colbert_linear.load_state_dict(colbert_state_dict)
         self.sparse_linear.load_state_dict(sparse_state_dict)
 
@@ -169,7 +182,8 @@ class BGEM3FlagModel:
             else:
                 self.device = torch.device("cpu")
                 use_fp16 = False
-        if use_fp16: self.model.half()
+        if use_fp16:
+            self.model.half()
         self.model = self.model.to(self.device)
 
         if device is None:
@@ -211,7 +225,6 @@ class BGEM3FlagModel:
         scores = torch.sum(scores) / q_reps.size(0)
         return scores
 
-
     @torch.no_grad()
     def encode(self,
                sentences: Union[List[str], str],
@@ -247,8 +260,8 @@ class BGEM3FlagModel:
         def _process_colbert_vecs(colbert_vecs: np.ndarray, attention_mask: list):
             # delte the vectors of padding tokens
             tokens_num = np.sum(attention_mask)
-            return colbert_vecs[:tokens_num - 1]  # we don't use the embedding of cls, so select tokens_num-1
-
+            # we don't use the embedding of cls, so select tokens_num-1
+            return colbert_vecs[:tokens_num - 1]
 
         all_dense_embeddings, all_lexical_weights, all_colbert_vec = [], [], []
         for start_index in tqdm(range(0, len(sentences), batch_size), desc="Inference Embeddings",
@@ -344,8 +357,10 @@ class BGEM3FlagModel:
             queries_batch = [pair[0] for pair in sentences_batch]
             corpus_batch = [pair[1] for pair in sentences_batch]
 
-            queries_inputs = _tokenize(queries_batch, max_length=max_query_length).to(self.device)
-            corpus_inputs = _tokenize(corpus_batch, max_length=max_passage_length).to(self.device)
+            queries_inputs = _tokenize(
+                queries_batch, max_length=max_query_length).to(self.device)
+            corpus_inputs = _tokenize(
+                corpus_batch, max_length=max_passage_length).to(self.device)
 
             queries_output = self.model(queries_inputs, return_dense=True, return_sparse=True, return_colbert=True,
                                         return_sparse_embedding=True)
@@ -353,19 +368,21 @@ class BGEM3FlagModel:
                                        return_sparse_embedding=True)
 
             q_dense_vecs, q_sparse_vecs, q_colbert_vecs = queries_output['dense_vecs'], queries_output['sparse_vecs'], \
-            queries_output['colbert_vecs']
+                queries_output['colbert_vecs']
             p_dense_vecs, p_sparse_vecs, p_colbert_vecs = corpus_output['dense_vecs'], corpus_output['sparse_vecs'], \
-            corpus_output['colbert_vecs']
+                corpus_output['colbert_vecs']
 
             dense_scores = self.model.dense_score(q_dense_vecs, p_dense_vecs)
-            sparse_scores = self.model.sparse_score(q_sparse_vecs, p_sparse_vecs)
+            sparse_scores = self.model.sparse_score(
+                q_sparse_vecs, p_sparse_vecs)
             colbert_scores = self.model.colbert_score(q_colbert_vecs, p_colbert_vecs,
                                                       q_mask=queries_inputs['attention_mask'])
 
             if weights_for_different_modes is None:
                 weights_for_different_modes = [1, 1., 1.]
                 weight_sum = 3
-                print("default weights for dense, sparse, colbert are [1.0, 1.0, 1.0] ")
+                print(
+                    "default weights for dense, sparse, colbert are [1.0, 1.0, 1.0] ")
             else:
                 assert len(weights_for_different_modes) == 3
                 weight_sum = sum(weights_for_different_modes)
@@ -384,14 +401,14 @@ class BGEM3FlagModel:
                 dense_scores.cpu().numpy().tolist()
             )
             all_scores['sparse+dense'].extend(
-                ((sparse_scores * weights_for_different_modes[1] + dense_scores * weights_for_different_modes[0])/(weights_for_different_modes[1]+weights_for_different_modes[0])).cpu().numpy().tolist()
+                ((sparse_scores * weights_for_different_modes[1] + dense_scores * weights_for_different_modes[0])/(
+                    weights_for_different_modes[1]+weights_for_different_modes[0])).cpu().numpy().tolist()
             )
             all_scores['colbert+sparse+dense'].extend(
-                ((colbert_scores * weights_for_different_modes[2] + sparse_scores * weights_for_different_modes[1] + dense_scores * weights_for_different_modes[0])/weight_sum).cpu().numpy().tolist()
+                ((colbert_scores * weights_for_different_modes[2] + sparse_scores * weights_for_different_modes[1] +
+                 dense_scores * weights_for_different_modes[0])/weight_sum).cpu().numpy().tolist()
             )
 
         if one_input_pair:
             return {k: v[0] for k, v in all_scores.items()}
         return all_scores
-
-
