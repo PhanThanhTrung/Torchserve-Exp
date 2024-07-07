@@ -1,3 +1,4 @@
+#%%
 import logging
 import os
 from collections import defaultdict
@@ -5,12 +6,9 @@ from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
-import torch.distributed as dist
-from FlagEmbedding.BGE_M3 import BGEM3ForInference
-from huggingface_hub import snapshot_download
-from torch import Tensor, nn
+from torch import nn
 from tqdm import tqdm
-from transformers import AutoModel, AutoTokenizer, is_torch_npu_available
+from transformers import AutoModel, AutoTokenizer
 
 logger = logging.getLogger(__name__)
 
@@ -34,13 +32,7 @@ class BGEM3Model(nn.Module):
         self.normlized: bool = normlized
         self.sentence_pooling_method: str = sentence_pooling_method
 
-    def load_model(self, model_name, colbert_dim: int = -1):
-        if not os.path.exists(model_name):
-            cache_folder = os.getenv('HF_HUB_CACHE')
-            model_name = snapshot_download(repo_id=model_name,
-                                           cache_dir=cache_folder,
-                                           ignore_patterns=['flax_model.msgpack', 'rust_model.ot', 'tf_model.h5'])
-
+    def load_model(self, model_name: str, colbert_dim: int = -1):
         self.model: AutoModel = AutoModel.from_pretrained(model_name)
         self.tokenizer: AutoTokenizer = AutoTokenizer.from_pretrained(
             model_name)
@@ -163,11 +155,8 @@ class BGEM3FlagModel:
             device: str = None
     ) -> None:
 
-        self.model = BGEM3ForInference(
-            model_name=model_name_or_path,
-            normlized=normalize_embeddings,
-            sentence_pooling_method=pooling_method,
-        )
+        self.model = BGEM3Model(
+            model_name=model_name_or_path, normlized=normalize_embeddings, sentence_pooling_method=pooling_method)
 
         self.tokenizer = self.model.tokenizer
         if device:
@@ -175,10 +164,6 @@ class BGEM3FlagModel:
         else:
             if torch.cuda.is_available():
                 self.device = torch.device("cuda")
-            elif torch.backends.mps.is_available():
-                self.device = torch.device("mps")
-            elif is_torch_npu_available():
-                self.device = torch.device("npu")
             else:
                 self.device = torch.device("cpu")
                 use_fp16 = False
@@ -412,3 +397,8 @@ class BGEM3FlagModel:
         if one_input_pair:
             return {k: v[0] for k, v in all_scores.items()}
         return all_scores
+
+
+#%%
+model = BGEM3FlagModel("/Users/miles/learning/lalatina_mother/ai_services/weights/bge-m3")
+# %%
