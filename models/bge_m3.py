@@ -8,7 +8,7 @@ import numpy as np
 import torch
 from torch import nn
 from tqdm import tqdm
-from transformers import AutoModel, AutoTokenizer
+from transformers import XLMRobertaModel, AutoTokenizer
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +22,7 @@ class BGEM3Model(nn.Module):
                  colbert_dim: int = -1):
         super().__init__()
         self.load_model(model_name, colbert_dim=colbert_dim)
-        self.vocab_size: int = self.model.config.vocab_size
+        self.vocab_size: int = self.embedding.config.vocab_size
 
         self.unified_finetuning: bool = unified_finetuning
         if not self.unified_finetuning:
@@ -33,14 +33,14 @@ class BGEM3Model(nn.Module):
         self.sentence_pooling_method: str = sentence_pooling_method
 
     def load_model(self, model_name: str, colbert_dim: int = -1):
-        self.model: AutoModel = AutoModel.from_pretrained(model_name)
+        self.embedding: XLMRobertaModel = XLMRobertaModel.from_pretrained(model_name, torchscript=True)
         self.tokenizer: AutoTokenizer = AutoTokenizer.from_pretrained(
             model_name)
 
-        self.colbert_linear: nn.Linear = torch.nn.Linear(in_features=self.model.config.hidden_size,
-                                                         out_features=self.model.config.hidden_size if colbert_dim == -1 else colbert_dim)
+        self.colbert_linear: nn.Linear = torch.nn.Linear(in_features=self.embedding.config.hidden_size,
+                                                         out_features=self.embedding.config.hidden_size if colbert_dim == -1 else colbert_dim)
         self.sparse_linear: nn.Linear = torch.nn.Linear(
-            in_features=self.model.config.hidden_size, out_features=1)
+            in_features=self.embedding.config.hidden_size, out_features=1)
 
         if os.path.exists(os.path.join(model_name, 'colbert_linear.pt')) and os.path.exists(
                 os.path.join(model_name, 'sparse_linear.pt')):
@@ -83,7 +83,7 @@ class BGEM3Model(nn.Module):
 
     def _encode(self, features):
         dense_vecs, sparse_vecs, colbert_vecs = None, None, None
-        last_hidden_state = self.model(
+        last_hidden_state = self.embedding(
             **features, return_dict=True).last_hidden_state
         dense_vecs = self.dense_embedding(
             last_hidden_state, features['attention_mask'])
@@ -175,7 +175,7 @@ class BGEM3FlagModel:
             self.num_gpus = torch.cuda.device_count()
             if self.num_gpus > 1:
                 print(f"----------using {self.num_gpus}*GPUs----------")
-                self.model.model = torch.nn.DataParallel(self.model.model)
+                self.model.embedding = torch.nn.DataParallel(self.model.embedding)
         else:
             self.num_gpus = 1
 
@@ -399,6 +399,4 @@ class BGEM3FlagModel:
         return all_scores
 
 
-#%%
 model = BGEM3FlagModel("/Users/miles/learning/lalatina_mother/ai_services/weights/bge-m3")
-# %%
