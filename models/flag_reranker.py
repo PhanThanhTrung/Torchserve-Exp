@@ -1,4 +1,4 @@
-#%%
+
 from typing import Union, List, Tuple
 
 import numpy as np
@@ -75,7 +75,7 @@ def last_logit_pool_layerwise(logits: Tensor,
 def sigmoid(x):
     return 1 / (1 + np.exp(-x))
 
-#%%
+
 class FlagReranker:
     def __init__(
             self,
@@ -149,7 +149,7 @@ class FlagReranker:
 
         return all_scores
 
-#%%
+
 class FlagLLMReranker:
     def __init__(
             self,
@@ -188,7 +188,7 @@ class FlagLLMReranker:
         self.model = self.model.to(self.device)
         self.model.eval()
         self.yes_loc = self.tokenizer("Yes", add_special_tokens=False)["input_ids"][0]
-        self.initial_prompt = "Given a query A and a passage B, determine whether the passage contains an answer to the query by providing a prediction of either "Yes" or "No"."
+        self.initial_prompt = "Given a query A and a passage B, determine whether the passage contains an answer to the query by providing a prediction of either 'Yes' or 'No'."
 
     @torch.no_grad()
     def compute_score(self, sentence_pairs: Union[List[Tuple[str, str]], Tuple[str, str]], batch_size: int = 16,
@@ -283,16 +283,12 @@ class FlagLLMReranker:
         else:
             return sum([len(t) for t in text])  # Sum of length of individual strings
 
-# %%
-model_path = "/Users/miles/bge-reranker-v2-gemma"
-reranker = FlagLLMReranker(model_name_or_path=model_path, use_fp16=True)
-# %%
-
-score = reranker.compute_score(["query", "passage"])
-print(score) # -5.65234375
-# %%
-samples = [["what is panda?", "hi"], 
-    ["what is panda?", "The giant panda (Ailuropoda melanoleuca), sometimes called a panda bear or simply panda, is a bear species endemic to China."]]
-scores = reranker.compute_score(samples)
-print(scores)
-# %%
+if __name__=='__main__':
+    model_path = "/Users/miles/bge-reranker-v2-gemma"
+    reranker = FlagLLMReranker(model_name_or_path=model_path, use_fp16=True)
+    score = reranker.compute_score(["query", "passage"])
+    print(score) # -5.65234375
+    samples = [["what is panda?", "hi"], 
+        ["what is panda?", "The giant panda (Ailuropoda melanoleuca), sometimes called a panda bear or simply panda, is a bear species endemic to China."]]
+    scores = reranker.compute_score(samples)
+    print(scores)
