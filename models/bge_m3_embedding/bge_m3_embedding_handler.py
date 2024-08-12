@@ -47,13 +47,16 @@ class BGEM3EmbeddingHandler(BaseHandler):
 
         properties = context.system_properties
         if torch.cuda.is_available() and properties.get("gpu_id") is not None:
+            logger.info(f"Detected CUDA. Setting model device is changed to gpu device id: {properties.get('gpu_id')}.")
             self.map_location = "cuda"
             self.device = torch.device(
                 self.map_location + ":" + str(properties.get("gpu_id")))
         elif torch.backends.mps.is_available() and properties.get("gpu_id") is not None:
+            logger.info(f"Detected MPS backend. Setting model device is changed to mps device id: {properties.get('gpu_id')}.")
             self.map_location = "mps"
             self.device = torch.device("mps")
         else:
+            logger.info(f"No GPU or MPS backend found. Setting model device is changed to cpu.")
             self.map_location = "cpu"
             self.device = torch.device(self.map_location)
 
@@ -171,36 +174,34 @@ class BGEM3EmbeddingHandler(BaseHandler):
         sentences_batch = []
         for input_text in data:
             logger.info("Received text: '%s'", input_text)
+            if isinstance(input_text, dict):
+                input_text = input_text.get("body")
             if isinstance(input_text, (bytes, bytearray)):
                 input_text = input_text.decode("utf-8")
-            max_sequence_length = int(
+            sentences_batch.append(input_text)
+        
+        max_sequence_length = int(
                 self.setup_config.get("max_sequence_length"))
-            inputs = self.model.tokenize(
-                input_text, max_length=max_sequence_length)
-            sentences_batch.append(inputs)
-
-        max_batch_size = self.setup_config.get("max_batch_size")
-        splitted_batches = []
-        logger.info("Splitting input sentences into batches.")
-        for start_index in range(0, len(sentences_batch), max_batch_size):
-            end_index = min(len(sentences_batch), start_index + max_batch_size)
-            _batch = sentences_batch[start_index: end_index]
-            splitted_batches.append(_batch)
+        sentences_batch: Dict = self.model.tokenize(
+                sentences_batch, max_length=max_sequence_length)
         logger.info(
-            f"Splitting is done. Got: {len(splitted_batches)} batches from {len(sentences_batch)} sentences.")
-        return splitted_batches
+            f"Preprocessing is done.")
+        logger.info(
+            f"Output: {sentences_batch}.")
+        return sentences_batch
 
     @torch.inference_mode
-    def inference(self, data: List[List[Dict]], *args, **kwargs):
-        """Receive a list of batches containing tokenized text. Responsible for passing those tokenized text
+    def inference(self, data: Dict, *args, **kwargs):
+        """Receive a Dictionary which contains output of tokenizer. Responsible for passing those output
         into embedding model.
         Args:
-            data (list): List of batches from the pre-process function is passed here
-        Returns:
-            list : It returns a list of the embeddings for the input text
+            data (Dict): Dictionary contains output of tokenizer.
+        Returns: It returns a  of the embeddings for the input text
         """
-        logger.info(f"Process embedding for {len(data)} batches.")
+        logger.info(f"Process embedding.")
         output = []
+        if not isinstance(data, list):
+            data = [data]
         for _batch in data:
             _output = self.model(_batch, return_dense=True, return_sparse=True,
                                  return_colbert=True, return_sparse_embedding=True)
