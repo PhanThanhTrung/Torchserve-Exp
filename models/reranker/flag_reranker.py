@@ -1,13 +1,17 @@
 
-from typing import Union, List, Tuple
+import os
+import warnings
+from typing import List, Tuple, Union
 
 import numpy as np
 import torch
+import torch.nn as nn
 from torch import Tensor
 from tqdm import tqdm, trange
-from transformers import AutoTokenizer, AutoModelForCausalLM, AutoModelForSequenceClassification, is_torch_npu_available
-import warnings
-import os
+from transformers import (AutoModelForCausalLM,
+                          AutoModelForSequenceClassification, AutoTokenizer,
+                          is_torch_npu_available)
+
 os.environ["TOKENIZERS_PARALLELISM"] = "true"
 
 class collater():
@@ -153,37 +157,9 @@ class FlagReranker:
 class FlagLLMReranker:
     def __init__(
             self,
-            model_name_or_path: str = None,
-            use_fp16: bool = False,
-            use_bf16: bool = False,
-            cache_dir: str = None,
-            device: Union[str, int] = None) -> None:
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name_or_path,
-                                                       cache_dir=cache_dir,
-                                                       trust_remote_code=True)
-
-        self.model = AutoModelForCausalLM.from_pretrained(model_name_or_path,
-                                                          cache_dir=cache_dir,
-                                                          trust_remote_code=True,
-                                                          torch_dtype=torch.bfloat16 if use_bf16 else torch.float32)
-
-        if device and isinstance(device, str):
-            self.device = torch.device(device)
-        else:
-            device = 0 if device is None else device
-            if torch.cuda.is_available():
-                torch.cuda.set_device(device)
-                self.device = torch.device("cuda")
-            elif torch.backends.mps.is_available():
-                self.device = torch.device("mps")
-            elif is_torch_npu_available():
-                self.device = torch.device("npu")
-            else:
-                self.device = torch.device("cpu")
-                use_fp16 = False
-
-        if use_fp16 and use_bf16 is False:
-            self.model.half()
+            model_dir: str = None) -> None:
+        self.tokenizer = AutoTokenizer.from_pretrained(model_dir)
+        self.model = AutoModelForCausalLM.from_pretrained(model_dir)
 
         self.model = self.model.to(self.device)
         self.model.eval()
@@ -282,6 +258,7 @@ class FlagLLMReranker:
             return len(text)
         else:
             return sum([len(t) for t in text])  # Sum of length of individual strings
+
 
 if __name__=='__main__':
     model_path = "/Users/miles/bge-reranker-v2-gemma"
