@@ -41,8 +41,7 @@ class BGEM3EmbeddingHandler(BaseHandler):
         else:
             logger.warning("Missing the handler config. Using a defalt config")
             self.setup_config = {
-                "max_sequence_length": 2048,
-                "max_batch_size": 128
+                "max_sequence_length": 2048
             }
 
         properties = context.system_properties
@@ -199,11 +198,18 @@ class BGEM3EmbeddingHandler(BaseHandler):
         Returns: It returns a  of the embeddings for the input text
         """
         logger.info(f"Process embedding.")
-        output = []
-        if not isinstance(data, list):
+        _output = self.model(data, return_dense=True, return_sparse=True,
+                                return_colbert=True, return_sparse_embedding=True)
+        return _output
+
+    def postprocess(self, data):
+        """
+        Return inference result.
+        :param inference_output: list of inference output
+        :return: list of predict results
+        """
+        if isinstance(data, dict):
+            for key in data:
+                data[key] = data[key].cpu().numpy().tolist()
             data = [data]
-        for _batch in data:
-            _output = self.model(_batch, return_dense=True, return_sparse=True,
-                                 return_colbert=True, return_sparse_embedding=True)
-            output.extend(_output)
-        return output
+        return data
