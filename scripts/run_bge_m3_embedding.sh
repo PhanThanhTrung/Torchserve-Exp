@@ -1,0 +1,1 @@
+torchserve --start --ncs --model-store ./weights --models bge_m3_embedding.mar --ts-config ./configs/bge_m3_embedding.properties  --disable-token-auth
