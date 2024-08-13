@@ -1,7 +1,8 @@
 import logging
 import os
-from typing import Dict, List, Tuple
+from typing import Dict
 
+import numpy as np
 import packaging
 import torch
 import transformers
@@ -22,26 +23,28 @@ if packaging.version.parse(torch.__version__) >= packaging.version.parse("2.0.0a
             logger.info("Enabled tensor cores")
 else:
     logger.warning(
-        f"Your torch version is {torch.__version__} which does not support torch.compile"
+        f"Your torch version is {
+            torch.__version__} which does not support torch.compile"
     )
     PT2_AVAILABLE = False
 
 
 class FlagLLMRerankerHandler(BaseHandler):
-    """
-    Flag LLM Reranker handler class for reranking sentence pairs.
-    """
     def __init__(self):
         super(FlagLLMRerankerHandler, self).__init__()
         self.setup_config = None
         self.initialized = False
-    
+
     def initialize(self, context):
-        """In this initialize function, the FlagLLMReranker model is loaded.
+        """Initialize function loads the model.pt file and initialized the model object.
+           First try to load torchscript else load eager mode state_dict based model.
         Args:
-            context: It is a JSON Object containing information
+            context (context): It is a JSON Object containing information
             pertaining to the model artifacts parameters.
+        Raises:
+            RuntimeError: Raises the Runtime error when the model.py is missing
         """
+
         if context is not None and hasattr(context, "model_yaml_config"):
             logger.info("Model YAML config not found.")
             self.model_yaml_config = context.model_yaml_config
@@ -50,25 +53,28 @@ class FlagLLMRerankerHandler(BaseHandler):
             self.setup_config = self.model_yaml_config.get("handler", {})
         else:
             logger.warning("Missing the handler config. Using a defalt config")
-            _default_prompt = "Given a query A and a passage B, determine whether the passage contains an answer to the query by providing a prediction of either 'Yes' or 'No'."
+            _initial_prompt = "Given a query A and a passage B, determine whether the passage contains an answer to the query by providing a prediction of either 'Yes' or 'No'."
             self.setup_config = {
-                "max_sequence_length": 512,
-                "initial_prompt": _default_prompt,
-                "normalize": True,
+                "max_sequence_length": 8000,
+                "initial_prompt": _initial_prompt,
+                "use_fp16": True,
             }
 
         properties = context.system_properties
         if torch.cuda.is_available() and properties.get("gpu_id") is not None:
-            logger.info(f"Detected CUDA. Setting model device is changed to gpu device id: {properties.get('gpu_id')}.")
+            logger.info(f"Detected CUDA. Setting model device is changed to gpu device id: {
+                        properties.get('gpu_id')}.")
             self.map_location = "cuda"
             self.device = torch.device(
                 self.map_location + ":" + str(properties.get("gpu_id")))
         elif torch.backends.mps.is_available() and properties.get("gpu_id") is not None:
-            logger.info(f"Detected MPS backend. Setting model device is changed to mps device id: {properties.get('gpu_id')}.")
+            logger.info(f"Detected MPS backend. Setting model device is changed to mps device id: {
+                        properties.get('gpu_id')}.")
             self.map_location = "mps"
             self.device = torch.device("mps")
         else:
-            logger.info(f"No GPU or MPS backend found. Setting model device is changed to cpu.")
+            logger.info(
+                f"No GPU or MPS backend found. Setting model device is changed to cpu.")
             self.map_location = "cpu"
             self.device = torch.device(self.map_location)
 
@@ -83,9 +89,14 @@ class FlagLLMRerankerHandler(BaseHandler):
             logger.debug("Loading eager model")
             self.tokenizer = AutoTokenizer.from_pretrained(model_dir)
             self.model = AutoModelForCausalLM.from_pretrained(model_dir)
-            self.yes_loc = self.tokenizer("Yes", add_special_tokens=False)["input_ids"][0]
+            if self.setup_config.get("use_fp16"):
+                self.model.half()
             self.model.to(self.device)
             self.model.eval()
+
+            self.yes_loc = self.tokenizer("Yes", add_special_tokens=False)[
+                "input_ids"][0]
+            self.sep_token = "\n"
 
         if hasattr(self, "model_yaml_config") and "pt2" in self.model_yaml_config:
             pt2_value = self.model_yaml_config["pt2"]
@@ -139,102 +150,100 @@ class FlagLLMRerankerHandler(BaseHandler):
                 logger.info(f"Compiled model with {compile_options_str}")
             except Exception as e:
                 logger.warning(
-                    f"Compiling model model with {compile_options_str} has failed \n Proceeding without compilation"
+                    f"Compiling model model with {
+                        compile_options_str} has failed \n Proceeding without compilation"
                 )
                 logger.warning(e)
 
         logger.debug("Model file %s loaded successfully", self.model_pt_path)
         self.initialized = True
 
-    def preprocess(self, data: Dict):
+    def preprocess(self, data: Dict) -> Dict:
+        """
+        Preprocess function to convert the request input to a tensor(Torchserve supported format).
+        The user needs to override to customize the pre-processing
+        Args :
+            data (list): List of the data from the request input.
+        Returns:
+            tensor: Returns the tensor data of the input
+        """
+        if not isinstance(data, dict) or data.get("body") is None:
+            raise ValueError("Request is invalid!")
+
         request_body = data.get("body")
-        if request_body is None or not isinstance(request_body, dict):
-            raise ValueError("Invalid Request!")
-        
-        prompt = request_body.get("prompt") or self.setup_config.get("initial_prompt")
-        passage_input = request_body.get("passage")
+        if isinstance(request_body, (bytes, bytearray)):
+            request_body = request_body.decode("utf-8")
+
+        prompt = request_body.get("prompt")
         query_input = request_body.get("query")
-        
-        prompt = self.__check_and_convert(input_bytes=prompt)
-        passage_input = self.__check_and_convert(input_bytes=passage_input)
-        query_input = self.__check_and_convert(input_bytes=query_input)
-        
-        sentences_pair = [passage_input, query_input]
+        passage_input = request_body.get("passage")
+        prompt = self.__check_and_convert(input_value=prompt, strict=True)
+        query_input = self.__check_and_convert(input_value=query_input)
+        passage_input = self.__check_and_convert(input_value=passage_input)
 
-        prompt_inputs = self.tokenizer(prompt,
-                                       return_tensors=None,
-                                       add_special_tokens=False)["input_ids"]
-        
-        encode_max_length = self.setup_config.get("max_sequence_length") + len(sep_inputs) + len(prompt_inputs)
-        
-        sep = "\n"
-        sep_inputs = self.tokenizer(sep,
-                                    return_tensors=None,
-                                    add_special_tokens=False)["input_ids"]
-        query_input = [f"A: {query_input}"]
-        passage_input = [f"B: {passage_input}"]
+        max_length = self.setup_config.get("max_sequence_length")
+        prompt = prompt or self.setup_config.get("initial_prompt")
 
-        queries_inputs = self.tokenizer(query_input,
-                                        return_tensors=None,
-                                        add_special_tokens=False,
-                                        max_length=encode_max_length * 3 // 4,
-                                        truncation=True)["input_ids"]
-        passages_inputs = self.tokenizer(passage_input,
-                                        return_tensors=None,
-                                        add_special_tokens=False,
-                                        max_length=encode_max_length,
-                                        truncation=True)["input_ids"]
-        batch_input = []
-        for _query_input, _passage_input in zip(queries_inputs, passages_inputs):
-            item = self.tokenizer.prepare_for_model(
-                        [self.tokenizer.bos_token_id] + _query_input,
-                        sep_inputs + _passage_input,
-                        truncation="only_second",
-                        max_length=encode_max_length,
-                        padding=False,
-                        return_attention_mask=False,
-                        return_token_type_ids=False,
-                        add_special_tokens=False
-                    )
-            item["input_ids"] = item["input_ids"] + sep_inputs + prompt_inputs
-            item["attention_mask"] = [1] * len(item["input_ids"])
-            item.pop("token_type_ids") if "token_type_ids" in item.keys() else None
-            if "position_ids" in item.keys():
-                item["position_ids"] = list(range(len(item["input_ids"])))
-            batch_input.append(item)
+        _query_input = f"A: {query_input}"
+        _passage_input = f"B: {passage_input}"
+        input_sentence = _query_input + self.sep_token + \
+            _passage_input + self.sep_token + prompt
+        tokenized_input_sentence = self.tokenizer(text=input_sentence, add_special_tokens=True,
+                                                  truncation=True, padding=True, max_length=max_length, return_attention_mask=True, return_tensors="pt")
+        tokenized_input_sentence = tokenized_input_sentence.to(self.device)
+        return tokenized_input_sentence
 
-        logger.info(f"Preprocessing is done.")
-        logger.info(f"Output: {sentences_pair}.")
-        return sentences_pair
-
-    def __check_and_convert(self, input_bytes):
-        if isinstance(input_bytes, (bytearray, bytes)):
-            input_bytes = input_bytes.decode("utf-8")
-            return input_bytes
+    def __check_and_convert(self, input_value, strict=False):
+        if isinstance(input_value, (bytes, bytearray)):
+            input_value = input_value.decode("utf-8")
+            return input_value
+        elif isinstance(input_value, str):
+            return input_value
         else:
-            raise ValueError("Invalid Request!")
+            if strict:
+                raise ValueError("Request is invalid!")
+            else:
+                return None
+
+    def __last_logit_pool(self, logits: torch.Tensor, attention_mask: torch.Tensor) -> torch.Tensor:
+        left_padding = (attention_mask[:, -1].sum() == attention_mask.shape[0])
+        if left_padding:
+            return logits[:, -1, :]
+        else:
+            sequence_lengths = attention_mask.sum(dim=1) - 1
+            batch_size = logits.shape[0]
+            return torch.stack([logits[i, sequence_lengths[i], :] for i in range(batch_size)], dim=0)
+
+    def __sigmoid(self, x):
+        return 1 / (1 + np.exp(-x))
 
     @torch.inference_mode
     def inference(self, data: Dict, *args, **kwargs):
-        """Receive a Dictionary which contains output of tokenizer. Responsible for passing those output
-        into embedding model.
+        """
+        The Inference Function is used to make a prediction call on the given input request.
+        The user needs to override the inference function to customize it.
         Args:
-            data (Dict): Dictionary contains output of tokenizer.
-        Returns: It returns a  of the embeddings for the input text
+            data (Torch Tensor): A Torch Tensor is passed to make the Inference Request.
+            The shape should match the model input shape.
+        Returns:
+            Torch Tensor : The Predicted Torch Tensor is returned in this function.
         """
-        logger.info(f"Process embedding.")
-        _output = self.model(data, return_dense=True, return_sparse=True,
-                                return_colbert=True, return_sparse_embedding=True)
-        return _output
+        _cur_attention_mask = data.get("attention_mask")
+        outputs = self.model(**data, output_hidden_states=True)
+        logits = outputs.logits
+        raw_scores = self.__last_logit_pool(logits, _cur_attention_mask)
+        raw_score = raw_scores[:, self.yes_loc]
+        normalized_score = self.__sigmoid(x=raw_score)
 
-    def postprocess(self, data):
+        return normalized_score
+
+    def postprocess(self, data: torch.Tensor):
         """
-        Return inference result.
-        :param inference_output: list of inference output
-        :return: list of predict results
+        The post process function makes use of the output from the inference and converts into a
+        Torchserve supported response output.
+        Args:
+            data (Torch Tensor): The torch tensor received from the prediction output of the model.
+        Returns:
+            List: The post process function returns a list of the predicted output.
         """
-        if isinstance(data, dict):
-            for key in data:
-                data[key] = data[key].cpu().numpy().tolist()
-            data = [data]
-        return data
+        return data.cpu().tolist()
