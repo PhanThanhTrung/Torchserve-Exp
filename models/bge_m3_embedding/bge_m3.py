@@ -128,7 +128,6 @@ class BGEM3Model(nn.Module):
 
         return output
 
-
     def _tokenize(self, texts: list, max_length: int):
         return self.tokenizer(
             texts,
