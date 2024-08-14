@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 from typing import Dict
@@ -167,27 +168,41 @@ class FlagLLMRerankerHandler(BaseHandler):
         Returns:
             tensor: Returns the tensor data of the input
         """
-        if not isinstance(data, dict) or data.get("body") is None:
+        logger.info(msg=f"Current request data: {data}")
+        if isinstance(data, dict):
+            if data.get("body") is None:
+                raise ValueError("Request is invalid!")
+            data = [data]
+
+        if isinstance(data, list) and len(data) == 0:
             raise ValueError("Request is invalid!")
 
-        request_body = data.get("body")
-        if isinstance(request_body, (bytes, bytearray)):
-            request_body = request_body.decode("utf-8")
-
-        prompt = request_body.get("prompt")
-        query_input = request_body.get("query")
-        passage_input = request_body.get("passage")
-        prompt = self.__check_and_convert(input_value=prompt, strict=True)
-        query_input = self.__check_and_convert(input_value=query_input)
-        passage_input = self.__check_and_convert(input_value=passage_input)
-
         max_length = self.setup_config.get("max_sequence_length")
-        prompt = prompt or self.setup_config.get("initial_prompt")
+        initial_prompt = self.setup_config.get("initial_prompt")
+        batch_sentence = []
+        for _data in data:
+            request_body = _data.get("body")
+            if isinstance(request_body, (bytes, bytearray)):
+                request_body = request_body.decode("utf-8")
 
-        _query_input = f"A: {query_input}"
-        _passage_input = f"B: {passage_input}"
-        input_sentence = _query_input + self.sep_token + \
-            _passage_input + self.sep_token + prompt
+            if isinstance(request_body, str):
+                request_body = json.loads(request_body)
+
+            prompt = request_body.get("prompt")
+            query_input = request_body.get("query")
+            passage_input = request_body.get("passage")
+            prompt = self.__check_and_convert(input_value=prompt, strict=False)
+            query_input = self.__check_and_convert(input_value=query_input)
+            passage_input = self.__check_and_convert(input_value=passage_input)
+
+            prompt = prompt or initial_prompt
+            _query_input = f"A: {query_input}"
+            _passage_input = f"B: {passage_input}"
+            input_sentence = _query_input + self.sep_token + \
+                _passage_input + self.sep_token + prompt
+            batch_sentence.append(input_sentence)
+
+        logger.info(msg="Starting tokenize input batch!")
         tokenized_input_sentence = self.tokenizer(text=input_sentence, add_special_tokens=True,
                                                   truncation=True, padding=True, max_length=max_length, return_attention_mask=True, return_tensors="pt")
         tokenized_input_sentence = tokenized_input_sentence.to(self.device)
