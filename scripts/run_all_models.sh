@@ -1,0 +1,1 @@
+torchserve --start --ncs --ts-config ./configs/all_models.properties  --disable-token-auth
