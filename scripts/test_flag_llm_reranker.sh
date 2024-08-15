@@ -1,0 +1,1 @@
+curl http://127.0.0.1:8080/predictions/flag_llm_reranker -T ./assets/flag_llm_reranker_testcase.json
