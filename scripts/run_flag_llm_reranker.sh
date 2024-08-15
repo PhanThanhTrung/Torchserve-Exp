@@ -1,0 +1,1 @@
+torchserve --start --ncs --model-store ./weights --models flag_llm_reranker.mar --ts-config ./configs/bge_m3_embedding.properties  --disable-token-auth
