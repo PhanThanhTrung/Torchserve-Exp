@@ -2,3 +2,4 @@
 *.pt
 weights/*
 *.log
+*.gz
