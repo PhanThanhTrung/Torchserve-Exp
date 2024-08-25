@@ -151,9 +151,7 @@ class FlagLLMRerankerHandler(BaseHandler):
                 logger.info(f"Compiled model with {compile_options_str}")
             except Exception as e:
                 logger.warning(
-                    f"Compiling model model with {
-                        compile_options_str} has failed \n Proceeding without compilation"
-                )
+                    f"Compiling model model with {compile_options_str} has failed \n Proceeding without compilation")
                 logger.warning(e)
 
         logger.debug("Model file %s loaded successfully", self.model_pt_path)
