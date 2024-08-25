@@ -162,6 +162,7 @@ class BGEM3EmbeddingHandler(BaseHandler):
         Returns:
             list : The preprocess function returns a list of prompts.
         """
+        logger.info(data)
         if (isinstance(data, list) and len(data) == 0) or data is None:
             raise ValueError("Input should not be empty.")
 
