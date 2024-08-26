@@ -1,0 +1,1 @@
+curl http://127.0.0.1:8080/predictions/llama_cpp_binding -T ./assets/llama_cpp_testcase.json
