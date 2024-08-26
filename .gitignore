@@ -1,5 +1,10 @@
 *.pth
 *.pt
-weights/*
 *.log
 *.gz
+*.mar
+*.gguf
+*.png
+*.safetensors
+*.model
+weights/*
