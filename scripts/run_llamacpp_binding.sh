@@ -1,0 +1,1 @@
+torchserve --start --ncs --model-store ./weights --models llama_cpp_binding.mar --ts-config ./configs/llama_cpp_binding.properties  --disable-token-auth
