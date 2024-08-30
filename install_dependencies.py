@@ -1,9 +1,11 @@
 import argparse
+import locale
 import os
 import platform
-import sys
 import re
 import subprocess
+import sys
+
 
 def run(command):
     """Returns (return-code, stdout, stderr)"""
@@ -273,28 +275,6 @@ class Linux(Common):
         os.system(f"{self.sudo_cmd}apt-get install -y aws-neuronx-collectives")
         os.system(f"{self.sudo_cmd}apt-get install -y aws-neuronx-runtime-lib")
 
-
-class Windows(Common):
-    def __init__(self):
-        super().__init__()
-        self.sudo_cmd = ""
-
-    def install_java(self):
-        pass
-
-    def install_nodejs(self):
-        pass
-
-    def install_wget(self):
-        pass
-
-    def install_numactl(self):
-        pass
-
-    def install_neuronx_driver(self):
-        pass
-
-
 class Darwin(Common):
     def __init__(self):
         super().__init__()
@@ -341,7 +321,7 @@ class Darwin(Common):
 
 
 def install_dependencies(cuda_version=None, nightly=False):
-    os_map = {"Linux": Linux, "Windows": Windows, "Darwin": Darwin}
+    os_map = {"Linux": Linux, "Darwin": Darwin}
     system = os_map[platform.system()]()
 
     if args.environment == "dev":
