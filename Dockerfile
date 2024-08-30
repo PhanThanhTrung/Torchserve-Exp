@@ -64,7 +64,7 @@ RUN export USE_CUDA=1
 
 ARG USE_CUDA_VERSION=""
 
-COPY ../ app
+COPY ./ app
 
 WORKDIR "app"
 
@@ -121,7 +121,8 @@ ENV PATH="/home/venv/bin:$PATH"
 RUN chmod +x /usr/local/bin/dockerd-entrypoint.sh \
     && chown -R model-server /home/model-server
 
-COPY docker/config.properties /home/model-server/config.properties
+COPY ./config/all_models.properties /home/model-server/config.properties
+COPY ./weights/*.mar /home/model-server/
 RUN mkdir /home/model-server/model-store && chown -R model-server /home/model-server/model-store
 
 EXPOSE 8080 8081 8082 7070 7071
