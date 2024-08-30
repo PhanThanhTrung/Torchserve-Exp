@@ -121,7 +121,7 @@ ENV PATH="/home/venv/bin:$PATH"
 RUN chmod +x /usr/local/bin/dockerd-entrypoint.sh \
     && chown -R model-server /home/model-server
 
-COPY ./config/all_models.properties /home/model-server/config.properties
+COPY ./config/all_models.properties /home/model-server/
 COPY ./weights/*.mar /home/model-server/
 RUN mkdir /home/model-server/model-store && chown -R model-server /home/model-server/model-store
 
