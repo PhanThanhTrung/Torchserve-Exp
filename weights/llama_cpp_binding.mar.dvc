@@ -1,5 +1,0 @@
-outs:
-- md5: c16925ed7652d973e955e76534393efe
-  size: 8232095706
-  hash: md5
-  path: llama_cpp_binding.mar

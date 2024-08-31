@@ -1,5 +1,0 @@
-outs:
-- md5: 5d50f3e90023f393bb755e9d81cb4e6c
-  size: 5033845202
-  hash: md5
-  path: flag_llm_reranker.mar
