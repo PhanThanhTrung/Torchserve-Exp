@@ -1,7 +1,7 @@
 ARG BASE_IMAGE=ubuntu:rolling
 ARG PYTHON_VERSION=3.10
 
-FROM ${BASE_IMAGE} AS compile-image
+FROM ${BASE_IMAGE}
 ARG BASE_IMAGE=ubuntu:rolling
 ARG PYTHON_VERSION
 ARG REPO_URL=https://github.com/pytorch/serve.git
@@ -47,7 +47,7 @@ RUN \
 
 RUN pip3 install --no-cache-dir torchserve torch-model-archiver torch-workflow-archiver
 RUN chmod +x dockerd-entrypoint.sh
-EXPOSE 8080 8081 8082 7070 7071
+# EXPOSE 8080 8081 8082 7070 7071
 
 ENTRYPOINT ["/bin/bash", "./dockerd-entrypoint.sh"]
 CMD ["serve"]
