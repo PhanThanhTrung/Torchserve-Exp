@@ -2,10 +2,8 @@ ARG BASE_IMAGE=ubuntu:rolling
 ARG PYTHON_VERSION=3.10
 
 FROM ${BASE_IMAGE}
-ARG BASE_IMAGE=ubuntu:rolling
-ARG PYTHON_VERSION
-ARG REPO_URL=https://github.com/pytorch/serve.git
 ENV PYTHONUNBUFFERED TRUE
+ARG USE_CUDA_VERSION=""
 
 RUN --mount=type=cache,id=apt-dev,target=/var/cache/apt \
     apt-get update && \
@@ -29,7 +27,6 @@ RUN python$PYTHON_VERSION -m venv /home/venv
 ENV PATH="/home/venv/bin:$PATH"
 RUN python -m pip install -U pip setuptools
 RUN export USE_CUDA=1
-ARG USE_CUDA_VERSION=""
 
 COPY ./ /root
 WORKDIR /root/
@@ -47,7 +44,6 @@ RUN \
 
 RUN pip3 install --no-cache-dir torchserve torch-model-archiver torch-workflow-archiver
 RUN chmod +x dockerd-entrypoint.sh
-# EXPOSE 8080 8081 8082 7070 7071
 
 ENTRYPOINT ["/bin/bash", "./dockerd-entrypoint.sh"]
 CMD ["serve"]
